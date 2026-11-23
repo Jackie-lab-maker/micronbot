@@ -540,6 +540,44 @@ The first blocker is getting SSH access to the Pi. None of these steps has been 
 7. **Rerun the alignment check** on the new robot object, then port the Quest control loop to it through `ArmInterface`.
 8. **Record, train and evaluate** with the Quest teleoperator, as in the Trial 1 roadmap.
 
+## Policy plan: ACT baseline, then pi0 and GR00T
+
+The plan is to train ACT first as a baseline, then post-train pi0 and GR00T on the same demonstrations and compare all three. We do no pretraining: pi0 and GR00T arrive pretrained, and we only fine-tune them on our own robot data.
+
+| Model | Role | What it is | Fine-tune hardware |
+| --- | --- | --- | --- |
+| ACT | Baseline, trained from scratch | Small policy in LeRobot, action chunking with a CVAE | Cloud GPU (a Mac cannot train it) |
+| pi0 | Stage 2 pretrained model | 3B-parameter flow-matching vision-language-action model from Physical Intelligence, via [openpi](https://github.com/Physical-Intelligence/openpi) or LeRobot's [pi0](https://huggingface.co/docs/lerobot/pi0) | openpi README: LoRA needs more than 22.5 GB (RTX 4090 class), full fine-tuning more than 70 GB (A100 or H100) |
+| GR00T N1.7 | Stage 2 pretrained model | 3B-parameter open vision-language-action model from NVIDIA, with a Cosmos-Reason2-2B backbone and a diffusion transformer action head ([Isaac-GR00T](https://github.com/NVIDIA/Isaac-GR00T)) | 1 or more GPUs with 40 GB+ VRAM; inference needs 16 GB+ |
+
+### Steps
+
+1. **Record one dataset for all three models.** Use LeRobot format with a fixed camera setup, consistent joint-state and action definitions, and a language label for the task. ACT ignores the label, but pi0 and GR00T use it.
+2. **Train the ACT baseline** and measure success over about 20 trials.
+3. **Fine-tune pi0.** Start with LoRA, which fits a single 24 GB-class GPU, and use the LeRobot or openpi training path with our dataset.
+4. **Fine-tune GR00T.** Its data is a variant of the LeRobot v2 layout with an extra `meta/modality.json`, and `convert_v3_to_v2.py` converts LeRobot v3 data. Register the robot with the `NEW_EMBODIMENT` tag and a modality config, using `examples/SO100/so100_config.py` as the closest example. The base model needs gated Hugging Face access to `nvidia/Cosmos-Reason2-2B`. The repo's single-GPU example:
+
+   ```bash
+   CUDA_VISIBLE_DEVICES=0 uv run python \
+       gr00t/experiment/launch_finetune.py \
+       --base-model-path nvidia/GR00T-N1.7-3B \
+       --dataset-path <our_dataset> \
+       --embodiment-tag NEW_EMBODIMENT \
+       --modality-config-path <our_modality_config>.py \
+       --num-gpus 1 --output-dir <output_dir> \
+       --max-steps 2000 --global-batch-size 32
+   ```
+5. **Evaluate all three on the same trials**, changing one thing at a time (data, chunk size, cameras), and log the failures to decide what to record next.
+
+### Open questions
+
+- Whether pi0 and GR00T work well on the AM-ARM200 action and camera format. pi0's authors warn that it may not work on every platform, so this needs a test.
+- Where inference runs: a cloud GPU server, or a local GPU machine with the Mac as the client.
+- Which cloud GPU to rent for fine-tuning, given the 22.5 GB (pi0 LoRA) and 40 GB (GR00T) minimums above.
+- Whether to do this in Trial 1 or save it for Trial 2, where the knife and box task needs more generalisation.
+
+Sources: [openpi README](https://github.com/Physical-Intelligence/openpi), [LeRobot pi0 docs](https://huggingface.co/docs/lerobot/pi0), [Isaac-GR00T README](https://github.com/NVIDIA/Isaac-GR00T).
+
 ## Gotchas
 
 The two that cost the most time were the stale IK URDF and the narrow lift and elbow ranges.
