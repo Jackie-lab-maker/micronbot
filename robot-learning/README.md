@@ -93,6 +93,8 @@ lerobot_alohamini/
     └── cert.pem, key.pem          # self-signed certificate (do not commit)
 ```
 
+Copies of all these scripts are in [`scripts/`](scripts/), exactly as run on the Mac.
+
 The calibration file is stored outside the repo:
 
 ```text

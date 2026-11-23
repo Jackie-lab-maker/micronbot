@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quest teleop</title>
+<style>body{font-family:sans-serif;background:#111;color:#eee;padding:24px}button{font-size:28px;padding:20px 40px}</style></head>
+<body>
+<h2>Quest controller stream</h2>
+<p id="status">Connecting...</p>
+<button id="enter" disabled>Enter VR</button>
+<script>
+const statusEl = document.getElementById('status');
+const btn = document.getElementById('enter');
+const ws = new WebSocket(`wss://${location.host}/ws`);
+ws.onopen = () => { statusEl.textContent = 'Socket connected. Tap Enter VR.'; btn.disabled = false; };
+ws.onclose = () => { statusEl.textContent = 'Socket closed.'; };
+
+btn.onclick = async () => {
+  if (!navigator.xr) { statusEl.textContent = 'WebXR not available'; return; }
+  const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl', { xrCompatible: true });
+  session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
+  let refSpace;
+  try { refSpace = await session.requestReferenceSpace('local-floor'); }
+  catch (e) { refSpace = await session.requestReferenceSpace('local'); }
+
+  const onFrame = (time, frame) => {
+    session.requestAnimationFrame(onFrame);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, session.renderState.baseLayer.framebuffer);
+    gl.clearColor(0.1, 0.15, 0.3, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    const hands = {};
+    for (const src of session.inputSources) {
+      if (!src.gripSpace || !src.gamepad) continue;
+      const pose = frame.getPose(src.gripSpace, refSpace);
+      if (!pose) continue;
+      const p = pose.transform.position, o = pose.transform.orientation;
+      const b = src.gamepad.buttons;
+      hands[src.handedness] = {
+        pos: [p.x, p.y, p.z],
+        quat: [o.x, o.y, o.z, o.w],
+        trigger: b[0] ? b[0].value : 0,
+        grip: b[1] ? b[1].value : 0,
+        a: b[4] && b[4].pressed ? 1 : 0,
+        b: b[5] && b[5].pressed ? 1 : 0,
+      };
+    }
+    if (ws.readyState === 1 && Object.keys(hands).length) {
+      ws.send(JSON.stringify({ t: time, hands }));
+    }
+  };
+  session.requestAnimationFrame(onFrame);
+};
+</script>
+</body></html>
