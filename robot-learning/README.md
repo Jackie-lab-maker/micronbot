@@ -2,14 +2,14 @@
 
 Nov 23, 2026 · Jackie
 
-This doc records two robot-learning trials on MicronBot, an adaptation of the AlohaMini dual-arm mobile robot for assembly and test warehouse work. Both use Quest 3 controllers as a fake leader arm, with no physical leader arm.
+This doc records three robot-learning trials on MicronBot (the third is planned), an adaptation of the AlohaMini dual-arm mobile robot for assembly and test warehouse work. Both use Quest 3 controllers as a fake leader arm, with no physical leader arm.
 
-|  | Trial 1: MicronArm | Trial 2: MicronBot |
-| --- | --- | --- |
-| Scope | One AM-ARM200 follower arm | The whole robot: two arms, cameras and base |
-| Connection | The Mac connects by USB straight to the servo adapter and the camera | The Pi 5 connects to both servo adapters and both cameras, and the Mac controls it over SSH and the local network |
-| Reference | [am-arm200.md](https://github.com/liyiteng/lerobot_alohamini/blob/main/docs/alohamini/am-arm200.md): one arm, one PC | [alohamini.md](https://github.com/liyiteng/lerobot_alohamini/blob/main/docs/alohamini/alohamini.md): Pi host, PC client |
-| State | In progress: arm, camera and URDF verified, Quest test pending | Not started: the Pi is not reachable over SSH yet |
+|  | Trial 1: MicronArm | Trial 2: MicronBot | Trial 3: Autonomous base |
+| --- | --- | --- | --- |
+| Scope | One AM-ARM200 follower arm | The whole robot: two arms, cameras and base | The whole robot driving itself between stations, with the policy doing the manipulation |
+| Connection | The Mac connects by USB straight to the servo adapter and the camera | The Pi 5 connects to three servo adapters (left arm, right arm, mobile base) and five cameras, and the Mac controls it over SSH and the local network | Same as Trial 2, plus a 2D lidar on the base and a navigation stack. Policy inference runs on the Mac or a GPU machine over the network |
+| Reference | [am-arm200.md](https://github.com/liyiteng/lerobot_alohamini/blob/main/docs/alohamini/am-arm200.md): one arm, one PC | [alohamini.md](https://github.com/liyiteng/lerobot_alohamini/blob/main/docs/alohamini/alohamini.md): Pi host, PC client | alohamini.md for the robot, plus ROS 2 Nav2 and slam_toolbox (proposed, not in the repo) |
+| State | In progress: arm, camera and URDF verified, Quest test pending | Not started: the Pi is not reachable over SSH yet | Planned: starts after Trials 1 and 2 work |
 
 ## Trial 1: MicronArm, single arm with the Mac connected directly
 
@@ -406,7 +406,7 @@ Concepts used in the project: imitation learning from teleoperated demonstration
 
 ## Trial 2: MicronBot, whole robot with a Pi 5 host and the Mac as client
 
-Trial 2 runs the whole robot. The Raspberry Pi 5 on the robot connects to both servo adapters and both cameras, and the Mac controls it as the PC client over SSH and the local network. Quest 3 controllers still act as the fake leader arm. It follows `alohamini.md`. It has not started: the Pi has no SSH access yet.
+Trial 2 runs the whole robot. The Raspberry Pi 5 on the robot connects to three servo adapters (left arm, right arm, mobile base) and five cameras (one on each arm, one on the lifter chest, two on the head), and the Mac controls it as the PC client over SSH and the local network. Quest 3 controllers still act as the fake leader arm. It follows `alohamini.md`. It has not started: the Pi has no SSH access yet.
 
 **Goal:** use MicronBot to unpack a cardboard box and clear it away, in two tasks:
 
@@ -433,7 +433,7 @@ The Mac sends joint commands to the Pi host and receives state and camera frames
 The Pi 5 owns every robot-side device, and the Mac only needs the network. Per the plan:
 
 - Raspberry Pi 5, with the RAM size not yet confirmed
-- Two servo adapters (left and right arm) and two cameras, one per USB port, which uses all four of the Pi's USB ports. The doc says each camera needs its own USB port, not a shared hub.
+- Three servo adapters (left arm, right arm, mobile base) and five cameras (one on each arm, one on the lifter chest, two on the head). That is more USB devices than the Pi's four ports, so the port and camera layout still needs to be confirmed. The doc says each camera needs its own USB port, not a shared hub.
 - 12 V supply for the servos, and a separate power supply for the Pi
 - Mac as the PC client, plus the Quest 3 controllers
 - Wi-Fi works, but an Ethernet cable to the router gives lower latency for teleoperation
@@ -577,6 +577,42 @@ The plan is to train ACT first as a baseline, then post-train pi0 and GR00T on t
 - Whether to do this in Trial 1 or save it for Trial 2, where the knife and box task needs more generalisation.
 
 Sources: [openpi README](https://github.com/Physical-Intelligence/openpi), [LeRobot pi0 docs](https://huggingface.co/docs/lerobot/pi0), [Isaac-GR00T README](https://github.com/NVIDIA/Isaac-GR00T).
+
+## Trial 3: Autonomous mobile base with the post-trained policy
+
+Trial 3 puts the pieces together for operation and deployment: the base drives itself between stations, and the post-trained policy (ACT, then pi0 or GR00T) does the manipulation at each station. It starts only after Trials 1 and 2 work and a policy runs on the full robot.
+
+### Why a separate navigation layer
+
+The policy only imitates demonstrations. It does not map the room, know where it is, or avoid obstacles. The AlohaMini repo has no SLAM, lidar or Nav2 code for the real robot (its only planner is a 2D occupancy-grid router in the simulation folder), so Trial 3 adds a navigation stack. The action space does include base velocity (x.vel, y.vel, theta.vel) and lift height, so the policy could drive the base, but for long trips in a warehouse the navigation stack should do it.
+
+### Proposed architecture
+
+- **Navigation layer:** a 2D lidar on the base, SLAM and localization, and a planner that sends base velocity commands. ROS 2 with slam_toolbox and Nav2 is the common choice for low-cost robots like this one. Not yet chosen or tested here.
+- **Policy layer:** the post-trained policy controls the arms and lift. Its base channels are masked out (held at zero) so only the navigation layer moves the wheels.
+- **Orchestrator:** a small state machine that runs the loop: navigate to a station, align, run the policy until the task step finishes, stow the arms, navigate to the next station.
+- **Where it runs:** the Pi 5 is the robot host. The policy is too large for the Pi, so inference runs on the Mac or a GPU machine over the network and sends actions to the host (ports 5555 to 5557, as in Trial 2).
+
+### Goal
+
+The full box task with no one driving: the robot drives to the box station, opens the cardboard box with a knife, then carries the empty box to the other area.
+
+### Planned steps
+
+1. Choose and mount a 2D lidar, and get wheel odometry from the three base servos.
+2. Build a map of the test area with SLAM and save it.
+3. Get Nav2 driving the base to named stations with the arms stowed.
+4. Add station alignment (for example AprilTags or a lidar docking pose), since the policy needs a repeatable start position.
+5. Record demos starting from the aligned station pose and retrain or fine-tune the policy for it.
+6. Write the orchestrator and test the loop one station at a time, then end to end.
+7. Add safety: emergency stop, speed limits, stop when a person is near, and a hard rule that the knife task only runs when the area is clear.
+
+### Open questions
+
+- Wheel-odometry quality from the three omni-wheel servos, and whether lidar-only localization is enough.
+- How repeatable the station alignment must be for the policy to succeed.
+- Latency of remote policy inference while the base is moving.
+- Whether to keep the base fully out of the policy, or later let it handle small final approach moves.
 
 ## Gotchas
 
