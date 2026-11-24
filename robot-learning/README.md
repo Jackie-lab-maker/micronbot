@@ -2,14 +2,14 @@
 
 Nov 23, 2026 · Jackie
 
-This doc records three robot-learning trials on MicronBot (the third is planned), an adaptation of the AlohaMini dual-arm mobile robot for assembly and test warehouse work. Both use Quest 3 controllers as a fake leader arm, with no physical leader arm.
+This doc records three robot-learning trials on MicronBot (the third is optional), an adaptation of the AlohaMini dual-arm mobile robot for assembly and test warehouse work. Both use Quest 3 controllers as a fake leader arm, with no physical leader arm.
 
-|  | Trial 1: MicronArm | Trial 2: MicronBot | Trial 3: Autonomous base |
+|  | Trial 1: MicronArm | Trial 2: MicronBot | Trial 3 (optional): Autonomous base |
 | --- | --- | --- | --- |
 | Scope | One AM-ARM200 follower arm | The whole robot: two arms, cameras and base | Fully autonomous operation: the base navigates itself with SLAM, and the policy does the manipulation |
 | Connection | The Mac connects by USB straight to the servo adapter and the camera | The Pi 5 connects to three servo adapters (left arm, right arm, mobile base) and five cameras, and the Mac controls it over SSH and the local network | Same as Trial 2, plus a 2D lidar on the base and a navigation stack. Policy inference runs on the Mac or a GPU machine over the network |
 | Reference | [am-arm200.md](https://github.com/liyiteng/lerobot_alohamini/blob/main/docs/alohamini/am-arm200.md): one arm, one PC | [alohamini.md](https://github.com/liyiteng/lerobot_alohamini/blob/main/docs/alohamini/alohamini.md): Pi host, PC client | alohamini.md for the robot, plus ROS 2 Nav2 and slam_toolbox (proposed, not in the repo) |
-| State | In progress: arm, camera and URDF verified, Quest test pending | Not started: the Pi is not reachable over SSH yet | Planned: starts after Trials 1 and 2 work |
+| State | In progress: arm, camera and URDF verified, Quest test pending | Not started: the Pi is not reachable over SSH yet | Optional: only if free roaming is needed, after Trials 1 and 2 work |
 
 ## Trial 1: MicronArm, single arm with the Mac connected directly
 
@@ -588,9 +588,9 @@ The plan is to train ACT first as a baseline, then post-train pi0 and GR00T on t
 
 Sources: [openpi README](https://github.com/Physical-Intelligence/openpi), [LeRobot pi0 docs](https://huggingface.co/docs/lerobot/pi0), [Isaac-GR00T README](https://github.com/NVIDIA/Isaac-GR00T).
 
-## Trial 3: Autonomous mobile base with the post-trained policy
+## Trial 3 (optional): Autonomous mobile base with the post-trained policy
 
-Trial 3 is fully autonomous operation, with no one driving. It puts the pieces together for deployment: the base navigates by itself between stations using SLAM, on top of the marker docking from Trial 2, and the post-trained policy (ACT, then pi0 or GR00T) does the manipulation at each station. It starts only after Trials 1 and 2 work and a policy runs on the full robot.
+Trial 3 is fully autonomous operation, with no one driving. It puts the pieces together for deployment: the base navigates by itself between stations using SLAM, on top of the marker docking from Trial 2, and the post-trained policy (ACT, then pi0 or GR00T) does the manipulation at each station. This trial is optional. It starts only after Trials 1 and 2 work and a policy runs on the full robot, and only if the project needs the base to roam on its own.
 
 ### Why a separate navigation layer
 
