@@ -6,7 +6,7 @@ This doc records three robot-learning trials on MicronBot (the third is planned)
 
 |  | Trial 1: MicronArm | Trial 2: MicronBot | Trial 3: Autonomous base |
 | --- | --- | --- | --- |
-| Scope | One AM-ARM200 follower arm | The whole robot: two arms, cameras and base | The whole robot driving itself between stations, with the policy doing the manipulation |
+| Scope | One AM-ARM200 follower arm | The whole robot: two arms, cameras and base | Fully autonomous operation: the base navigates itself with SLAM, and the policy does the manipulation |
 | Connection | The Mac connects by USB straight to the servo adapter and the camera | The Pi 5 connects to three servo adapters (left arm, right arm, mobile base) and five cameras, and the Mac controls it over SSH and the local network | Same as Trial 2, plus a 2D lidar on the base and a navigation stack. Policy inference runs on the Mac or a GPU machine over the network |
 | Reference | [am-arm200.md](https://github.com/liyiteng/lerobot_alohamini/blob/main/docs/alohamini/am-arm200.md): one arm, one PC | [alohamini.md](https://github.com/liyiteng/lerobot_alohamini/blob/main/docs/alohamini/alohamini.md): Pi host, PC client | alohamini.md for the robot, plus ROS 2 Nav2 and slam_toolbox (proposed, not in the repo) |
 | State | In progress: arm, camera and URDF verified, Quest test pending | Not started: the Pi is not reachable over SSH yet | Planned: starts after Trials 1 and 2 work |
@@ -490,6 +490,16 @@ The Quest stream, the retargeting math, the IK and the URDF tooling carry over u
 
 To keep the switch cheap, the control loop is written against a small `ArmInterface` with `read_joints_deg()` and `send_joints_deg(q)`. In Trial 1 it wraps `SOFollower`, and in Trial 2 only that wrapper changes.
 
+### Moving the base in Trial 2
+
+Trial 2 has no SLAM or lidar, so the base moves in one of three ways. Use them in this order:
+
+1. **Teleoperate the base.** Drive with the keyboard (supported by the repo) or the Quest joystick. The policy handles the arms and lift. Start here.
+2. **Policy-driven base.** The action space includes base velocity (x.vel, y.vel, theta.vel), so demos that include driving let ACT or pi0 reproduce short, repeatable moves, such as a fixed path between two stations. There is no obstacle awareness, so use it only in a clear, controlled area.
+3. **Marker-based navigation.** Put an AprilTag at each station. The robot sees the tag with its normal camera and drives toward it. This needs no map and also gives the repeatable docking pose the policy needs.
+
+What Trial 2 does not have is obstacle avoidance or long-distance localization. That is Trial 3.
+
 ### Planned steps
 
 The first blocker is getting SSH access to the Pi. None of these steps has been run yet, and the Pi's RAM size is not confirmed.
@@ -580,7 +590,7 @@ Sources: [openpi README](https://github.com/Physical-Intelligence/openpi), [LeRo
 
 ## Trial 3: Autonomous mobile base with the post-trained policy
 
-Trial 3 puts the pieces together for operation and deployment: the base drives itself between stations, and the post-trained policy (ACT, then pi0 or GR00T) does the manipulation at each station. It starts only after Trials 1 and 2 work and a policy runs on the full robot.
+Trial 3 is fully autonomous operation, with no one driving. It puts the pieces together for deployment: the base navigates by itself between stations using SLAM, on top of the marker docking from Trial 2, and the post-trained policy (ACT, then pi0 or GR00T) does the manipulation at each station. It starts only after Trials 1 and 2 work and a policy runs on the full robot.
 
 ### Why a separate navigation layer
 
