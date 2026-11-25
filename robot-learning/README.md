@@ -348,6 +348,18 @@ The server is written and starts, but an end-to-end run, with the Terminal print
 
 The goal is to get controller pose, trigger and grip from the Quest to the Mac. The headset must be on, because it tracks the controllers with its cameras, but the VR view can be blank. The approach is a WebXR page served from the Mac and opened in the Quest browser. It reads each controller's grip pose and gamepad buttons every XR frame and sends JSON over a secure WebSocket. WebXR requires HTTPS, so the server uses a self-signed certificate.
 
+```mermaid
+flowchart LR
+    Q["Quest 3 controllers<br/>pose, trigger, grip"] --> P["WebXR page<br/>reads pose and buttons"]
+    P -- "JSON over WSS :8443" --> S["server.py on the Mac"]
+    S -.-> C["Clutch + retarget<br/>controller delta scaled to arm tip"]
+    C -.-> I["IK<br/>placo, gripper_tip, joint limits"]
+    I -.-> M["Servo commands<br/>smoothed, trigger to gripper"]
+    M -.-> A["AM-ARM200 follower arm"]
+```
+
+Solid arrows are partly done (server written, end-to-end test pending). Dotted arrows are not started: retarget, IK and the servo loop.
+
 Find the Mac's IP address:
 
 ```bash
@@ -419,15 +431,16 @@ Trial 2 runs the whole robot. The Raspberry Pi 5 on the robot connects to three 
 
 ### Architecture
 
-The Pi 5 owns the arms and cameras, and the Mac talks to it over the network.
+The Pi 5 owns the arms, base and cameras, and the Mac talks to it over the network.
 
 ```mermaid
 flowchart LR
     Q["Quest 3 controllers<br/>WebXR page"] -- "WSS :8443" --> M["Mac<br/>server + retarget + IK<br/>(PC client)"]
-    M -- "TCP 5556 state/commands<br/>TCP 5557 camera stream" --> P["Raspberry Pi 5<br/>(host)"]
+    M -- "TCP 5555 to 5557<br/>commands, state, camera stream" --> P["Raspberry Pi 5<br/>(host)"]
     P -- "USB" --> L["Servo adapter + left arm"]
     P -- "USB" --> R["Servo adapter + right arm"]
-    P -- "USB" --> C["2 cameras"]
+    P -- "USB" --> B["Servo adapter + mobile base"]
+    P -- "USB (layout to confirm)" --> C["5 cameras"]
 ```
 
 The Mac sends joint commands to the Pi host and receives state and camera frames back over TCP 5556 and 5557. The Quest stream and the IK stay on the Mac, as in Trial 1.
@@ -498,6 +511,13 @@ To keep the switch cheap, the control loop is written against a small `ArmInterf
 
 Trial 2 has no SLAM or lidar, so the base moves in one of three ways. Use them in this order:
 
+```mermaid
+flowchart LR
+    A["1 Teleoperate<br/>keyboard or Quest<br/>policy: arms, lift"] --> B["2 Policy-driven<br/>short fixed moves<br/>clear area only"]
+    B --> C["3 Marker nav<br/>AprilTag per station<br/>no map needed"]
+    C -.-> D["Full autonomy (Trial 3, optional)<br/>SLAM and Nav2<br/>obstacle avoidance"]
+```
+
 1. **Teleoperate the base.** Drive with the keyboard (supported by the repo) or the Quest joystick. The policy handles the arms and lift. Start here.
 2. **Policy-driven base.** The action space includes base velocity (x.vel, y.vel, theta.vel), so demos that include driving let ACT or pi0 reproduce short, repeatable moves, such as a fixed path between two stations. There is no obstacle awareness, so use it only in a clear, controlled area.
 3. **Marker-based navigation.** Put an AprilTag at each station. The robot sees the tag with its normal camera and drives toward it. This needs no map and also gives the repeatable docking pose the policy needs.
@@ -558,6 +578,17 @@ The first blocker is getting SSH access to the Pi. None of these steps has been 
 
 The plan is to train ACT first as a baseline, then post-train pi0 and GR00T on the same demonstrations and compare all three. We do no pretraining: pi0 and GR00T arrive pretrained, and we only fine-tune them on our own robot data.
 
+```mermaid
+flowchart LR
+    R["Record demos<br/>one shared dataset<br/>LeRobot format + label"] --> A["Train ACT<br/>baseline, cloud GPU"]
+    R --> P["Fine-tune pi0<br/>pretrained, on our demos"]
+    R --> G["Fine-tune GR00T<br/>pretrained, on our demos"]
+    A --> E["Evaluate<br/>same trials, about 20 each"]
+    P --> E
+    G --> E
+    E -- "log failures, decide what to record next" --> R
+```
+
 | Model | Role | What it is | Fine-tune hardware |
 | --- | --- | --- | --- |
 | ACT | Baseline, trained from scratch | Small policy in LeRobot, action chunking with a CVAE | Cloud GPU (a Mac cannot train it) |
@@ -606,6 +637,16 @@ The policy only imitates demonstrations. It does not map the room, know where it
 - **Policy layer:** the post-trained policy controls the arms and lift. Its base channels are masked out (held at zero) so only the navigation layer moves the wheels.
 - **Orchestrator:** a small state machine that runs the loop: navigate to a station, align, run the policy until the task step finishes, stow the arms, navigate to the next station.
 - **Where it runs:** the Pi 5 is the robot host. The policy is too large for the Pi, so inference runs on the Mac or a GPU machine over the network and sends actions to the host (ports 5555 to 5557, as in Trial 2).
+
+```mermaid
+flowchart LR
+    N["1 Navigate<br/>SLAM and Nav2"] --> D["2 Dock<br/>repeatable pose"] --> M["3 Manipulate<br/>base stopped"] --> S["4 Stow and go<br/>arms stowed"]
+    S -- "next station" --> N
+    NL["Navigation layer<br/>2D lidar, SLAM, Nav2"] -- "base velocity" --> H["Pi 5 host<br/>ports 5555 to 5557"]
+    PL["Policy layer<br/>ACT, pi0 or GR00T"] -- "arms and lift only" --> H
+```
+
+Only the navigation layer moves the wheels; the policy's base channels are held at zero.
 
 ### Goal
 
