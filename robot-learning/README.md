@@ -324,6 +324,10 @@ The ruler distance agreed with the model. (It was reported as matching; the exac
 python align_check.py
 ```
 
+![align_check.py live skeleton: side and top views with the tip triad](images/align_check_live_skeleton.png)
+
+*Example `align_check.py` window. The title shows the six live joint angles in degrees, in joint order (the labels are truncated in the plot): about -2.2, -31.0, 14.2, -14.2, 8.1 and 4.5. Left: side view (y against z, in mm). Right: top view (x against y). The red, green and blue lines are the tip frame axes; green is the gripper pointing axis.*
+
 | Check | Result |
 | --- | --- |
 | Zero pose (all joints about 0 degrees) | Matches the real arm, so the URDF zero is LeRobot's calibrated midpoint |
